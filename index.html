@@ -45,6 +45,11 @@
             color: #555;
             line-height: 1.5;
         }
+        #default-homepage .subtext {
+            margin-top: 0.75rem;
+            font-size: 1rem;
+            color: #555;
+        }
         #error-banner {
             display: none;
             margin: 1rem;
@@ -63,13 +68,8 @@
 <body>
     <div id="error-banner" role="alert" aria-live="polite"></div>
     <div id="default-homepage" aria-hidden="true">
-        <h1>Welcome</h1>
-        <p>
-            No assignment was specified. Open a task using a link with an
-            <code>id</code> query parameter, for example:
-            <br><br>
-            <code>?id=ASSIGN-WORKLIST%20AMI-GMS-CLMS-WORK%20S-6708%21CAPTUREAPPLICATIONDETAILS_1</code>
-        </p>
+        <h1>No KYC form found.</h1>
+        <p class="subtext">To complete your KYC form, please access the link from the email.</p>
     </div>
     <div id="embed-container" class="hidden"></div>
 
