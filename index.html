@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Amicorp KYC Bridge</title>
+    <title>KYC – Form Not Found</title>
     <style>
         * {
             box-sizing: border-box;
@@ -68,14 +68,33 @@
 <body>
     <div id="error-banner" role="alert" aria-live="polite"></div>
     <div id="default-homepage" aria-hidden="true">
-        <h1>Unable to find the KYC form!</h1>
-        <p class="subtext">We could not find a KYC form for your request. Please access the link shared in the email to complete your KYC form.</p>
+        <h1>No KYC form found.</h1>
+        <p class="subtext">To complete your KYC form, please access the link from the email.</p>
     </div>
     <div id="embed-container" class="hidden"></div>
 
     <script>
         (function () {
             "use strict";
+
+            var DEFAULT_PAGE_TITLE = "KYC – Form Not Found";
+            var PROPER_ASSIGNMENT_KEY_PATTERN = /^ASSIGN-WORKLIST\s+.+\s+(K-\d+)!.+$/i;
+
+            function extractCaseIdFromAssignmentKey(assignmentId) {
+                var match = assignmentId.match(PROPER_ASSIGNMENT_KEY_PATTERN);
+                return match ? match[1] : null;
+            }
+
+            function setDocumentTitleForAssignment(assignmentId) {
+                var caseId = extractCaseIdFromAssignmentKey(assignmentId);
+                if (!caseId) {
+                    log("info", "Assignment key is not properly formed; keeping default tab title.");
+                    return;
+                }
+
+                document.title = "KYC Details " + caseId;
+                log("info", "Document title set:", document.title);
+            }
 
             var PEGA_CONFIG = {
                 action: "openAssignment",
@@ -143,6 +162,7 @@
                     homepage.setAttribute("aria-hidden", "false");
                 }
                 log("info", "Showing default homepage (no assignment ID).");
+                document.title = DEFAULT_PAGE_TITLE;
             }
 
             function createPegaEmbed(assignmentId) {
@@ -180,6 +200,7 @@
                 }
 
                 embedContainer.classList.remove("hidden");
+                setDocumentTitleForAssignment(assignmentId);
 
                 if (typeof customElements !== "undefined" &&
                     customElements.get("pega-embed") === undefined) {
