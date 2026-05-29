@@ -53,6 +53,103 @@
         #error-banner.visible {
             display: block;
         }
+        .thank-you-screen {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(0, 64, 107, 0.25);
+            backdrop-filter: blur(2px);
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+        .thank-you-screen.visible {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .thank-you-container {
+            position: relative;
+            width: 100%;
+            max-width: 520px;
+            margin: auto;
+            padding: 2.25rem 2rem 2rem;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 20px 50px rgba(0, 64, 107, 0.15);
+            border: 1px solid rgba(0, 64, 107, 0.08);
+            overflow: hidden;
+        }
+        .thank-you-container::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #00406b, #006699);
+        }
+        .thank-you-success-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 1.25rem;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #e8f4fa 0%, #d4ebf7 100%);
+        }
+        .thank-you-success-icon svg {
+            display: block;
+        }
+        .thank-you-heading {
+            margin: 0 0 1rem;
+            font-size: 1.625rem;
+            font-weight: 700;
+            color: #00406b;
+            text-align: center;
+            letter-spacing: -0.02em;
+        }
+        .thank-you-body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        .thank-you-message {
+            margin: 0 0 1.75rem;
+            color: #4a5568;
+            font-size: 0.9375rem;
+            line-height: 1.7;
+        }
+        .thank-you-highlight {
+            color: #00406b;
+            font-weight: 600;
+        }
+        .thank-you-close-btn {
+            min-width: 140px;
+            padding: 0.75rem 2rem;
+            border: none;
+            border-radius: 999px;
+            background: #00406b;
+            color: #fff;
+            font-size: 0.9375rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.15s ease;
+        }
+        .thank-you-close-btn:hover {
+            background: #003357;
+            transform: translateY(-1px);
+        }
+        .thank-you-close-btn:active {
+            transform: translateY(0);
+        }
+        .thank-you-close-btn:focus-visible {
+            outline: 2px solid #00406b;
+            outline-offset: 3px;
+        }
     </style>
     <script src="https://devportal.amicorp.com/prweb/PRRestService/c11nsvc/v1/pega-embed.js"></script>
 </head>
@@ -62,6 +159,25 @@
         <h1>KYC – Form Not Found</h1>
     </div>
     <div id="embed-container" class="hidden"></div>
+    <div id="thank-you-modal" class="thank-you-screen" role="dialog" aria-modal="true" aria-labelledby="thank-you-title" aria-hidden="true">
+        <div class="thank-you-container">
+            <div class="thank-you-success-icon" aria-hidden="true">
+                <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M8 18.5L14.5 25L28 11" stroke="#00406b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <h1 id="thank-you-title" class="thank-you-heading">Thank You</h1>
+            <div class="thank-you-body">
+                <p class="thank-you-message">
+                    Thank you for choosing our services. We appreciate the opportunity to serve you.
+                    Please note that the &ldquo;KYC declaration&rdquo; form will be sent to your email ID:
+                    <span id="thank-you-email" class="thank-you-highlight">your registered email address</span>
+                    via DocuSign for digital signature.
+                </p>
+                <button id="thank-you-close-btn" class="thank-you-close-btn" type="button">Close</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         (function () {
@@ -69,6 +185,26 @@
 
             var DEFAULT_PAGE_TITLE = "KYC – Form Not Found";
             var PROPER_ASSIGNMENT_KEY_PATTERN = /^ASSIGN-WORKLIST\s+.+\s+(K-\d+)!.+$/i;
+            var ASSIGNMENT_NOT_FOUND_PATTERN = /assignment not found for the given parameter assignmentid/i;
+            var assignmentNotFoundHandled = false;
+            var submitSuccessHandled = false;
+            var submitPending = false;
+            var activeEmbed = null;
+            var lastSubmitResponseText = "";
+            var thankYouEmailPollInterval = null;
+            var pegaErrorObservers = [];
+            var shadowPollInterval = null;
+            var submitDomCheckTimeout = null;
+            var THANK_YOU_TITLE = "Thank You";
+            var AMICORP_HOME_URL = "https://www.amicorp.com";
+            var DEFAULT_THANK_YOU_EMAIL = "your registered email address";
+            var THANK_YOU_EMAIL_FIELD_LABELS = ["UBO Email", "Email"];
+            var SUBMIT_BUTTON_SELECTOR = '[data-testid=":assignment-action-buttons:submit"]';
+            var ASSIGNMENT_ACTION_BUTTON_SELECTOR = '[data-testid^=":assignment-action-buttons:"]';
+            var SUBMIT_BUTTON_TEST_ID = ":assignment-action-buttons:submit";
+            var ASSIGNMENT_ACTION_URL_PATTERN = /\/assignments\/[^/]+\/actions\/[^/?]+/i;
+            var ASSIGNMENT_RESOLVED_STATUS_PATTERN = /"status"\s*:\s*"Resolved-Completed"/i;
+            var ASSIGNMENT_RESOLUTION_PATTERN = /"transitionType"\s*:\s*"resolution"/i;
 
             function extractCaseIdFromAssignmentKey(assignmentId) {
                 var match = assignmentId.match(PROPER_ASSIGNMENT_KEY_PATTERN);
@@ -102,6 +238,612 @@
                     console[level](prefix, message, detail);
                 } else {
                     console[level](prefix, message);
+                }
+            }
+
+            function isAssignmentActionRequest(url) {
+                return typeof url === "string" && ASSIGNMENT_ACTION_URL_PATTERN.test(url);
+            }
+
+            function isAssignmentFormVisible(embed) {
+                if (!embed || !embed.shadowRoot) {
+                    return false;
+                }
+
+                return !!embed.shadowRoot.querySelector(SUBMIT_BUTTON_SELECTOR);
+            }
+
+            function hasPegaValidationErrors(embed) {
+                if (!embed || !embed.shadowRoot) {
+                    return false;
+                }
+
+                var shadowRoot = embed.shadowRoot;
+                var errorBanner = shadowRoot.querySelector('[data-testid=":banner:"][role="alert"]');
+                var bannerText = errorBanner ? errorBanner.textContent.trim() : "";
+
+                if (bannerText && !ASSIGNMENT_NOT_FOUND_PATTERN.test(bannerText)) {
+                    return true;
+                }
+
+                if (shadowRoot.querySelector('[aria-invalid="true"]')) {
+                    return true;
+                }
+
+                var fieldErrors = shadowRoot.querySelectorAll('[data-testid$=":info"]');
+                for (var i = 0; i < fieldErrors.length; i += 1) {
+                    var fieldText = fieldErrors[i].textContent.trim();
+                    if (fieldText && /error/i.test(fieldText)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            function readNetworkResponseText(response) {
+                if (response && typeof response.responseText === "string") {
+                    return Promise.resolve(response.responseText);
+                }
+
+                if (response && typeof response.clone === "function" && typeof response.text === "function") {
+                    return response.clone().text().catch(function () {
+                        return "";
+                    });
+                }
+
+                return Promise.resolve("");
+            }
+
+            function isResolvedAssignmentResponse(responseText) {
+                if (!responseText) {
+                    return false;
+                }
+
+                return ASSIGNMENT_RESOLVED_STATUS_PATTERN.test(responseText) ||
+                    ASSIGNMENT_RESOLUTION_PATTERN.test(responseText);
+            }
+
+            function redirectToAmicorpHome() {
+                log("info", "Redirecting to Amicorp home page.");
+                window.location.href = AMICORP_HOME_URL;
+            }
+
+            function normalizeSummaryFieldValue(value) {
+                if (value === null || value === undefined) {
+                    return "";
+                }
+
+                var trimmed = String(value)
+                    .replace(/[\u2013\u2014]/g, "")
+                    .replace(/\s+/g, " ")
+                    .trim();
+
+                if (!trimmed || /^no value$/i.test(trimmed)) {
+                    return "";
+                }
+
+                return trimmed;
+            }
+
+            function getSummaryFieldValueByLabel(root, label) {
+                var fieldNames = root.querySelectorAll('[data-testid=":field-value-item:name"]');
+
+                for (var i = 0; i < fieldNames.length; i += 1) {
+                    if (fieldNames[i].textContent.trim() !== label) {
+                        continue;
+                    }
+
+                    var valueNode = fieldNames[i].nextElementSibling;
+                    if (!valueNode || valueNode.getAttribute("data-testid") !== ":field-value-item:value") {
+                        continue;
+                    }
+
+                    var value = normalizeSummaryFieldValue(valueNode.textContent);
+                    if (value) {
+                        return value;
+                    }
+                }
+
+                return "";
+            }
+
+            function getUboEmailFromEmbed(embed) {
+                if (!embed || !embed.shadowRoot) {
+                    return "";
+                }
+
+                var summaryRoot = embed.shadowRoot.querySelector('[data-testid=":case-view:summary-fields"]') || embed.shadowRoot;
+
+                for (var i = 0; i < THANK_YOU_EMAIL_FIELD_LABELS.length; i += 1) {
+                    var email = getSummaryFieldValueByLabel(summaryRoot, THANK_YOU_EMAIL_FIELD_LABELS[i]);
+                    if (email) {
+                        return email;
+                    }
+                }
+
+                return "";
+            }
+
+            function getUboEmailFromResponseText(responseText) {
+                if (!responseText) {
+                    return "";
+                }
+
+                try {
+                    var parsed = JSON.parse(responseText);
+                    var content = parsed &&
+                        parsed.data &&
+                        parsed.data.caseInfo &&
+                        parsed.data.caseInfo.content;
+
+                    if (content) {
+                        var candidates = [
+                            content.UBOEmail,
+                            content.UBO_Email,
+                            content["UBO Email"],
+                            content.Email,
+                            content.email
+                        ];
+
+                        for (var i = 0; i < candidates.length; i += 1) {
+                            var candidate = normalizeSummaryFieldValue(candidates[i]);
+                            if (candidate) {
+                                return candidate;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    // Fall back to pattern matching below.
+                }
+
+                var uboMatch = responseText.match(/"UBOEmail"\s*:\s*"([^"]+)"/i);
+                if (uboMatch) {
+                    return normalizeSummaryFieldValue(uboMatch[1]);
+                }
+
+                var emailMatch = responseText.match(/"Email"\s*:\s*"([^"]+)"/i);
+                if (emailMatch) {
+                    return normalizeSummaryFieldValue(emailMatch[1]);
+                }
+
+                return "";
+            }
+
+            function updateThankYouEmailDisplay(email) {
+                var emailElement = document.getElementById("thank-you-email");
+                if (!emailElement) {
+                    return;
+                }
+
+                emailElement.textContent = email || DEFAULT_THANK_YOU_EMAIL;
+            }
+
+            function clearThankYouEmailPoll() {
+                if (thankYouEmailPollInterval) {
+                    clearInterval(thankYouEmailPollInterval);
+                    thankYouEmailPollInterval = null;
+                }
+            }
+
+            function populateThankYouEmail() {
+                clearThankYouEmailPoll();
+
+                var email = getUboEmailFromEmbed(activeEmbed);
+
+                if (!email && lastSubmitResponseText) {
+                    email = getUboEmailFromResponseText(lastSubmitResponseText);
+                }
+
+                updateThankYouEmailDisplay(email);
+
+                if (email || !activeEmbed) {
+                    return;
+                }
+
+                var attempts = 0;
+                thankYouEmailPollInterval = setInterval(function () {
+                    attempts += 1;
+                    var resolvedEmail = getUboEmailFromEmbed(activeEmbed);
+
+                    if (resolvedEmail) {
+                        updateThankYouEmailDisplay(resolvedEmail);
+                        clearThankYouEmailPoll();
+                        log("info", "Thank you email populated from summary field.", resolvedEmail);
+                        return;
+                    }
+
+                    if (attempts >= 15) {
+                        clearThankYouEmailPoll();
+                        log("info", "Email/UBO Email not found; using default placeholder.");
+                    }
+                }, 200);
+            }
+
+            function setupThankYouModal() {
+                var closeButton = document.getElementById("thank-you-close-btn");
+                if (!closeButton || closeButton.__kycCloseBound) {
+                    return;
+                }
+
+                closeButton.__kycCloseBound = true;
+                closeButton.addEventListener("click", redirectToAmicorpHome);
+            }
+
+            function showThankYouModal() {
+                var modal = document.getElementById("thank-you-modal");
+                var homepage = document.getElementById("default-homepage");
+
+                if (homepage) {
+                    homepage.classList.remove("visible");
+                    homepage.setAttribute("aria-hidden", "true");
+                }
+                if (modal) {
+                    modal.classList.add("visible");
+                    modal.setAttribute("aria-hidden", "false");
+                }
+
+                populateThankYouEmail();
+                document.title = THANK_YOU_TITLE;
+                log("info", "Showing thank you modal after successful submit.");
+            }
+
+            function handleSubmitSuccess(source) {
+                if (submitSuccessHandled || assignmentNotFoundHandled || !submitPending) {
+                    return;
+                }
+
+                submitSuccessHandled = true;
+                submitPending = false;
+                clearSubmitDomCheck();
+                log("info", "Assignment submit success detected.", source || "unknown");
+                disconnectPegaErrorObservers();
+                showThankYouModal();
+            }
+
+            function clearSubmitDomCheck() {
+                if (submitDomCheckTimeout) {
+                    clearTimeout(submitDomCheckTimeout);
+                    submitDomCheckTimeout = null;
+                }
+            }
+
+            function scheduleSubmitDomCheck(embed) {
+                clearSubmitDomCheck();
+                submitDomCheckTimeout = setTimeout(function () {
+                    if (!submitPending || submitSuccessHandled || assignmentNotFoundHandled) {
+                        return;
+                    }
+
+                    if (!hasPegaValidationErrors(embed) && !isAssignmentFormVisible(embed)) {
+                        handleSubmitSuccess("dom");
+                        return;
+                    }
+
+                    submitPending = false;
+                    log("info", "Submit completed but form or validation errors remain visible.");
+                }, 2500);
+            }
+
+            function evaluateSubmitNetworkResponse(response, url) {
+                if (submitSuccessHandled || assignmentNotFoundHandled) {
+                    return;
+                }
+
+                if (!isAssignmentActionRequest(url)) {
+                    return;
+                }
+
+                var status = response && typeof response.status === "number" ? response.status : 0;
+
+                if (status >= 200 && status < 300) {
+                    readNetworkResponseText(response).then(function (body) {
+                        if (submitSuccessHandled || assignmentNotFoundHandled) {
+                            return;
+                        }
+
+                        if (isResolvedAssignmentResponse(body)) {
+                            if (!submitPending) {
+                                log("info", "Resolved assignment response ignored; submit was not clicked.", url);
+                                return;
+                            }
+
+                            lastSubmitResponseText = body;
+                            log("info", "Resolved assignment response detected after submit.", url);
+                            handleSubmitSuccess("network");
+                            return;
+                        }
+
+                        if (submitPending) {
+                            log("info", "Assignment action succeeded without resolution status.", url);
+                        }
+                    });
+                    return;
+                }
+
+                if (submitPending && status >= 400) {
+                    submitPending = false;
+                    log("info", "Submit API returned an error status.", status);
+                }
+            }
+
+            function onNonSubmitActionClicked(actionTestId) {
+                if (!submitPending) {
+                    return;
+                }
+
+                submitPending = false;
+                clearSubmitDomCheck();
+                log("info", "Non-submit assignment action clicked; thank you popup suppressed.", actionTestId || "unknown");
+            }
+
+            function onSubmitButtonClicked(embed) {
+                if (submitSuccessHandled || assignmentNotFoundHandled) {
+                    return;
+                }
+
+                submitPending = true;
+                activeEmbed = embed;
+                log("info", "Submit button clicked; monitoring for successful completion.");
+                scheduleSubmitDomCheck(embed);
+            }
+
+            function attachSubmitButtonListener(embed) {
+                if (!embed || !embed.shadowRoot || embed.__kycSubmitListenerAttached) {
+                    return;
+                }
+
+                if (!embed.shadowRoot.querySelector(ASSIGNMENT_ACTION_BUTTON_SELECTOR)) {
+                    return;
+                }
+
+                embed.__kycSubmitListenerAttached = true;
+                embed.shadowRoot.addEventListener("click", function (event) {
+                    var target = event.target;
+                    if (!target || typeof target.closest !== "function") {
+                        return;
+                    }
+
+                    var actionButton = target.closest(ASSIGNMENT_ACTION_BUTTON_SELECTOR);
+                    if (!actionButton || actionButton.disabled || actionButton.getAttribute("aria-disabled") === "true") {
+                        return;
+                    }
+
+                    var actionTestId = actionButton.getAttribute("data-testid") || "";
+
+                    if (actionTestId === SUBMIT_BUTTON_TEST_ID) {
+                        onSubmitButtonClicked(embed);
+                        return;
+                    }
+
+                    onNonSubmitActionClicked(actionTestId);
+                }, true);
+                log("info", "Assignment action button listener attached.");
+            }
+
+            function checkSubmitState(root, embed) {
+                if (!submitPending || submitSuccessHandled || assignmentNotFoundHandled || !embed) {
+                    return;
+                }
+
+                if (hasPegaValidationErrors(embed)) {
+                    submitPending = false;
+                    clearSubmitDomCheck();
+                    log("info", "Validation errors detected after submit attempt.");
+                    return;
+                }
+
+                if (!isAssignmentFormVisible(embed)) {
+                    handleSubmitSuccess("dom-mutation");
+                }
+            }
+
+            function hideErrorBanner() {
+                var banner = document.getElementById("error-banner");
+                if (banner) {
+                    banner.classList.remove("visible");
+                    banner.textContent = "";
+                }
+            }
+
+            function isAssignmentNotFoundMessage(text) {
+                return typeof text === "string" && ASSIGNMENT_NOT_FOUND_PATTERN.test(text);
+            }
+
+            function nodeContainsAssignmentNotFound(node) {
+                if (!node) {
+                    return false;
+                }
+
+                if (node.nodeType === Node.TEXT_NODE) {
+                    return isAssignmentNotFoundMessage(node.textContent);
+                }
+
+                if (node.nodeType === Node.ELEMENT_NODE && node.shadowRoot) {
+                    if (nodeContainsAssignmentNotFound(node.shadowRoot)) {
+                        return true;
+                    }
+                }
+
+                var child = node.firstChild;
+                while (child) {
+                    if (nodeContainsAssignmentNotFound(child)) {
+                        return true;
+                    }
+                    child = child.nextSibling;
+                }
+
+                return false;
+            }
+
+            function disconnectPegaErrorObservers() {
+                pegaErrorObservers.forEach(function (observer) {
+                    observer.disconnect();
+                });
+                pegaErrorObservers = [];
+                clearSubmitDomCheck();
+
+                if (shadowPollInterval) {
+                    clearInterval(shadowPollInterval);
+                    shadowPollInterval = null;
+                }
+            }
+
+            function checkPegaEmbedForAssignmentNotFound(embed) {
+                if (!embed) {
+                    return false;
+                }
+
+                if (embed.shadowRoot) {
+                    var bannerMessage = embed.shadowRoot.querySelector('[data-testid=":banner:message-label"]');
+                    if (bannerMessage && isAssignmentNotFoundMessage(bannerMessage.textContent)) {
+                        return true;
+                    }
+
+                    if (nodeContainsAssignmentNotFound(embed.shadowRoot)) {
+                        return true;
+                    }
+                }
+
+                return nodeContainsAssignmentNotFound(embed);
+            }
+
+            function handleAssignmentNotFound(source) {
+                if (assignmentNotFoundHandled) {
+                    return;
+                }
+
+                assignmentNotFoundHandled = true;
+                log("info", "Pega assignment not found detected.", source || "unknown");
+                hideErrorBanner();
+                showDefaultHomepage();
+                disconnectPegaErrorObservers();
+            }
+
+            function checkEmbedForAssignmentNotFound(root, embed) {
+                if (assignmentNotFoundHandled) {
+                    return;
+                }
+
+                if (checkPegaEmbedForAssignmentNotFound(embed) || nodeContainsAssignmentNotFound(root)) {
+                    handleAssignmentNotFound("dom");
+                }
+            }
+
+            function observeNodeForAssignmentNotFound(node, embed) {
+                if (!node) {
+                    return;
+                }
+
+                var observer = new MutationObserver(function () {
+                    checkEmbedForAssignmentNotFound(node, embed);
+                    checkSubmitState(node, embed);
+                });
+
+                observer.observe(node, {
+                    childList: true,
+                    subtree: true,
+                    characterData: true
+                });
+
+                pegaErrorObservers.push(observer);
+            }
+
+            function startPegaErrorObserver(embedContainer, embed) {
+                disconnectPegaErrorObservers();
+                activeEmbed = embed;
+                var shadowObserverAttached = false;
+
+                checkEmbedForAssignmentNotFound(embedContainer, embed);
+                observeNodeForAssignmentNotFound(embedContainer, embed);
+
+                function attachShadowObserver() {
+                    if (assignmentNotFoundHandled || !embed.shadowRoot || shadowObserverAttached) {
+                        attachSubmitButtonListener(embed);
+                        return;
+                    }
+
+                    shadowObserverAttached = true;
+                    observeNodeForAssignmentNotFound(embed.shadowRoot, embed);
+                    checkEmbedForAssignmentNotFound(embed.shadowRoot, embed);
+                    attachSubmitButtonListener(embed);
+                }
+
+                attachShadowObserver();
+
+                var attempts = 0;
+                shadowPollInterval = setInterval(function () {
+                    attempts += 1;
+                    attachShadowObserver();
+                    checkEmbedForAssignmentNotFound(embedContainer, embed);
+                    attachSubmitButtonListener(embed);
+
+                    if ((assignmentNotFoundHandled || submitSuccessHandled || attempts >= 50) && shadowPollInterval) {
+                        clearInterval(shadowPollInterval);
+                        shadowPollInterval = null;
+                    }
+                }, 200);
+            }
+
+            function patchNetworkMonitor(method, originalFn) {
+                return function () {
+                    var args = Array.prototype.slice.call(arguments);
+                    var requestUrl = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+
+                    var result = originalFn.apply(this, args);
+
+                    if (result && typeof result.then === "function") {
+                        return result.then(function (response) {
+                            if (!assignmentNotFoundHandled && response && response.status === 404) {
+                                response.clone().text().then(function (body) {
+                                    if (isAssignmentNotFoundMessage(body)) {
+                                        handleAssignmentNotFound("network");
+                                    }
+                                }).catch(function () {});
+                            }
+
+                            evaluateSubmitNetworkResponse(response, requestUrl);
+                            return response;
+                        });
+                    }
+
+                    if (result && typeof result.addEventListener === "function") {
+                        result.addEventListener("load", function () {
+                            evaluateSubmitNetworkResponse(result, requestUrl);
+                        });
+                    }
+
+                    return result;
+                };
+            }
+
+            function installNetworkErrorMonitor() {
+                if (window.__kycBridgeNetworkMonitorInstalled) {
+                    return;
+                }
+
+                window.__kycBridgeNetworkMonitorInstalled = true;
+
+                if (typeof window.fetch === "function") {
+                    window.fetch = patchNetworkMonitor("fetch", window.fetch);
+                }
+
+                if (typeof XMLHttpRequest !== "undefined") {
+                    var originalOpen = XMLHttpRequest.prototype.open;
+                    var originalSend = XMLHttpRequest.prototype.send;
+
+                    XMLHttpRequest.prototype.open = function (method, url) {
+                        this.__kycRequestUrl = url;
+                        return originalOpen.apply(this, arguments);
+                    };
+
+                    XMLHttpRequest.prototype.send = function () {
+                        var xhr = this;
+                        xhr.addEventListener("load", function () {
+                            evaluateSubmitNetworkResponse(xhr, xhr.__kycRequestUrl || "");
+                        });
+                        return originalSend.apply(this, arguments);
+                    };
                 }
             }
 
@@ -194,7 +936,7 @@
 
                 embed.addEventListener("error", function (event) {
                     log("error", "pega-embed reported an error.", event);
-                    showError("The assignment could not be loaded. Please check the link or try again later.");
+                    handleAssignmentNotFound("embed-error");
                 });
 
                 return embed;
@@ -223,6 +965,7 @@
 
                 var embed = createPegaEmbed(assignmentId);
                 embedContainer.appendChild(embed);
+                startPegaErrorObserver(embedContainer, embed);
                 log("info", "pega-embed element created and appended.", {
                     assignmentID: assignmentId,
                     id: embed.id
@@ -231,6 +974,8 @@
 
             function init() {
                 log("info", "DOM loaded; initializing mashup.");
+                installNetworkErrorMonitor();
+                setupThankYouModal();
 
                 try {
                     var assignmentId = getAssignmentIdFromUrl();
