@@ -41,16 +41,6 @@
             margin: 0 0 0.75rem;
             font-size: 1.5rem;
         }
-        #default-homepage p {
-            margin: 0;
-            color: #555;
-            line-height: 1.5;
-        }
-        #default-homepage .subtext {
-            margin-top: 0.75rem;
-            font-size: 1rem;
-            color: #555;
-        }
         #error-banner {
             display: none;
             margin: 1rem;
@@ -69,8 +59,7 @@
 <body>
     <div id="error-banner" role="alert" aria-live="polite"></div>
     <div id="default-homepage" aria-hidden="true">
-        <h1>No KYC form found.</h1>
-        <p class="subtext">To complete your KYC form, please access the link from the email.</p>
+        <h1>KYC – Form Not Found</h1>
     </div>
     <div id="embed-container" class="hidden"></div>
 
@@ -100,7 +89,7 @@
             var PEGA_CONFIG = {
                 action: "openAssignment",
                 themeID: "SelfServicePortal",
-                casePage: "full",
+                casePage: "fullSelfService",
                 appAlias: "CLMSCSDev",
                 pegaServerUrl: "https://devportal.amicorp.com/prweb/",
                 grantType: "customBearer",
@@ -126,24 +115,48 @@
                 banner.classList.add("visible");
             }
 
+            function decodeBase64AssignmentId(encoded) {
+                var normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+                var padding = normalized.length % 4;
+
+                if (padding) {
+                    normalized += "====".slice(padding);
+                }
+
+                return atob(normalized);
+            }
+
             function getAssignmentIdFromUrl() {
                 try {
                     var params = new URLSearchParams(window.location.search);
-                    var id = params.get("id");
+                    var encodedId = params.get("id");
 
-                    if (id === null) {
+                    if (encodedId === null) {
                         log("info", "No 'id' query parameter in URL.");
                         return null;
                     }
 
-                    id = id.trim();
-                    if (!id) {
+                    encodedId = encodedId.trim();
+                    if (!encodedId) {
                         log("warn", "'id' query parameter is present but empty.");
                         return null;
                     }
 
-                    log("info", "Assignment ID from URL:", id);
-                    return id;
+                    var assignmentId;
+                    try {
+                        assignmentId = decodeBase64AssignmentId(encodedId).trim();
+                    } catch (decodeErr) {
+                        log("error", "Failed to decode base64 assignment ID.", decodeErr);
+                        return null;
+                    }
+
+                    if (!assignmentId) {
+                        log("warn", "Decoded assignment ID is empty.");
+                        return null;
+                    }
+
+                    log("info", "Assignment ID decoded from base64:", assignmentId);
+                    return assignmentId;
                 } catch (err) {
                     log("error", "Failed to parse URL query parameters.", err);
                     throw err;
